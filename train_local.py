@@ -1,130 +1,95 @@
-from transformers import SamProcessor
+from transformers import SamProcessor, SamModel
 from torch.utils.data import DataLoader
-# from utils.datalaoder import SAMDataset, DataLoaderdFromDataset
-from utils.dataloader_local import WaterDatasetLoader, SAMDataset
-from transformers import SamModel
+import torch
+import torch.nn as nn
 from torch.optim import Adam
 from monai.losses import DiceCELoss
-from torch.cuda.amp import autocast, GradScaler
+from torch.cuda.amp import GradScaler
 from tqdm import tqdm
 from statistics import mean
-import torch
-from torch.nn.functional import threshold, normalize
-import torch.nn as nn
+from utils.dataloader_local import WaterDatasetLoader, SAMDataset
 
-
-
-class TrainModel:
-
-    def __init__(self, dataset_root, image_subfolder, annotation_subfolder):
-
+class SAMTrainingPipeline:
+    def __init__(self, dataset_root, image_subfolder, annotation_subfolder, pretrained_model="facebook/sam-vit-base", batch_size=20, learning_rate=1e-5, num_epochs=100):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.processor = SamProcessor.from_pretrained(pretrained_model)
+        self.model = SamModel.from_pretrained(pretrained_model).to(self.device)
+        self.batch_size = batch_size
+        self.learning_rate = learning_rate
+        self.num_epochs = num_epochs
         self.dataset_root = dataset_root
         self.image_subfolder = image_subfolder
         self.annotation_subfolder = annotation_subfolder
-        
-        self.processor = SamProcessor.from_pretrained("facebook/sam-vit-base")
-        
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        self.model = SamModel.from_pretrained("facebook/sam-vit-base").to(device)
 
-        for name, param in self.model.named_parameters():
-            if name.startswith("vision_encoder") or name.startswith("prompt_encoder"):
-                param.requires_grad_(False)
+        self._prepare_dataloaders()
+        self._setup_model()
+        self._initialize_optimizer_and_loss()
 
-        self.model = nn.DataParallel(self.model)
-        self.model.to(device)
-    
-    def train(self):
-        """Train the model.
-        """
-        # Load the dataset
+    def _prepare_dataloaders(self):
         loader = WaterDatasetLoader(self.dataset_root, self.image_subfolder, self.annotation_subfolder)
         loader.load_paths()
         train_data, test_data = loader.create_dataset()
         train_dataset = SAMDataset(dataset=train_data, processor=self.processor)
         test_dataset = SAMDataset(dataset=test_data, processor=self.processor)
-        train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-        test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+        self.train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
+        self.test_dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
 
-        # train_dataset = SAMDataset(dataset=train_dataloader, processor=self.processor)
-        # test_dataset = SAMDataset(dataset=test_dataloader, processor=self.processor)
-        # train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-        # test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=True)
-
-        # Load the model
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = SamModel.from_pretrained("facebook/sam-vit-base").to(device)
-
-        # make sure we only compute gradients for mask decoder
-        for name, param in model.named_parameters():
+    def _setup_model(self):
+        for name, param in self.model.named_parameters():
             if name.startswith("vision_encoder") or name.startswith("prompt_encoder"):
                 param.requires_grad_(False)
+        self.model = nn.DataParallel(self.model).to(self.device)
 
-                # initialize the optimizer and the loss function
-        optimizer = Adam(self.model.module.mask_decoder.parameters(), lr=1e-5, weight_decay=0)
-        
-        # we use the DiceCELoss from MONAI because it is efficient in segmentation tasks also HF implementation uses that loss
-        seg_loss = DiceCELoss(sigmoid=True, squared_pred=True, reduction='mean')
+    def _initialize_optimizer_and_loss(self):
+        self.optimizer = Adam(self.model.module.mask_decoder.parameters(), lr=self.learning_rate, weight_decay=0)
+        self.seg_loss = DiceCELoss(sigmoid=True, squared_pred=True, reduction='mean')
+
+    def train(self):
         scaler = GradScaler()
-
-        # Training loop
-        
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model= nn.DataParallel(model)
-        model.to(device)
-        model.train()
-        scaler = GradScaler()
-
-        for epoch in range(10):
+        for epoch in range(self.num_epochs):
+            self.model.train()
             epoch_losses = []
-            for batch in tqdm(train_dataloader):
-                outputs = model(pixel_values=batch["pixel_values"].to(device),
-                                input_boxes=batch["input_boxes"].to(device),
-                                multimask_output=False)
-
-                predicted_masks = outputs.pred_masks.squeeze(1)
-                ground_truth_masks = batch["ground_truth_mask"].float().to(device)
-                loss = seg_loss(predicted_masks, ground_truth_masks.unsqueeze(1))
-
-                if torch.isfinite(loss):
-                    optimizer.zero_grad()
-                    scaler.scale(loss).backward()
-                    scaler.step(optimizer)
-                    scaler.update()
-                    epoch_losses.append(loss.item())
-                else:
-                    print(f'Skipping a step due to non-finite loss: {loss.item()}')
-
-    
+            for batch in tqdm(self.train_dataloader):
+                self._train_batch(batch, epoch_losses, scaler)
             print(f'EPOCH: {epoch}')
             print(f'Mean loss: {mean(epoch_losses)}')
 
-            # Validation loop
-            model.eval()
-            val_losses = []
-            with torch.no_grad():
-                for batch in tqdm(test_dataloader):
-                    outputs = model(pixel_values=batch["pixel_values"].to(device),
-                                    input_boxes=batch["input_boxes"].to(device),
-                                    multimask_output=False)
+            self._validate()
 
-                    predicted_masks = outputs.pred_masks.squeeze(1)
-                    ground_truth_masks = batch["ground_truth_mask"].float().to(device)
-                    loss = seg_loss(predicted_masks, ground_truth_masks.unsqueeze(1))
-                    val_losses.append(loss.item())
+    def _train_batch(self, batch, epoch_losses, scaler):
+        outputs = self.model(pixel_values=batch["pixel_values"].to(self.device),
+                             input_boxes=batch["input_boxes"].to(self.device),
+                             multimask_output=False)
 
-            print(f'Validation loss: {mean(val_losses)}')
+        predicted_masks = outputs.pred_masks.squeeze(1)
+        ground_truth_masks = batch["ground_truth_mask"].float().to(self.device)
+        loss = self.seg_loss(predicted_masks, ground_truth_masks.unsqueeze(1))
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.module.parameters(), max_norm=1.0)  # Gradient clipping
+        self.optimizer.step()
+        epoch_losses.append(loss.item())
+
+    def _validate(self):
+        self.model.eval()
+        val_losses = []
+        with torch.no_grad():
+            for batch in tqdm(self.test_dataloader):
+                outputs = self.model(pixel_values=batch["pixel_values"].to(self.device),
+                                     input_boxes=batch["input_boxes"].to(self.device),
+                                     multimask_output=False)
+
+                predicted_masks = outputs.pred_masks.squeeze(1)
+                ground_truth_masks = batch["ground_truth_mask"].float().to(self.device)
+                loss = self.seg_loss(predicted_masks, ground_truth_masks.unsqueeze(1))
+                val_losses.append(loss.item())
 
 
-        model.train()
 
-if __name__ == "__main__":
-    dataset_root = "D:\\fedsam\\fedsamv1\\images"
-    image_subfolder = "JPEGImages\ADE20K"
-    annotation_subfolder = "Annotations\ADE20K"
+dataset_root = "D:\\fedsam\\water_v1"
+image_subfolder = "JPEGImages\ADE20K"
+annotation_subfolder = "Annotations\ADE20K"
 
-    train_model = TrainModel(dataset_root, image_subfolder, annotation_subfolder)
-    train_model.train()
+pipeline = SAMTrainingPipeline(dataset_root, image_subfolder, annotation_subfolder)
+pipeline.train()
