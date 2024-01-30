@@ -160,6 +160,7 @@ class WaterDatasetLoader:
         # return Dataset.from_dict(dataset_dict)
         return train_dataset, test_dataset
 
+# Code taken from: https://github.com/NielsRogge/Transformers-Tutorials/blob/master/SAM/Fine_tune_SAM_(segment_anything)_on_a_custom_dataset.ipynb
 class SAMDataset(TorchDataset):
     def __init__(self, dataset, processor):
         self.dataset = dataset

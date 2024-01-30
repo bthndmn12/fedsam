@@ -49,12 +49,6 @@ def plot_image_and_mask(dataset):
     plt.tight_layout()
     plt.show()
 
-"""
-Bin mizanı kaldır yerinden
-yeterki sen kalkma yanımdan
-
-"""
-
 if __name__ == "__main__":
      
     # Define the root directory of your dataset
