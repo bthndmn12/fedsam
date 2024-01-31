@@ -1,8 +1,5 @@
 from datasets import Dataset as Dataset
 from torch.utils.data import Dataset as DatasetTorch
-import torch
-from torch.utils.data import DataLoader, random_split
-from torchvision.transforms import ToTensor, Compose
 from PIL import Image
 from utils.bounding_box import get_bounding_box
 import numpy as np
@@ -97,49 +94,6 @@ class DataLoaderdFromDataset:
         # Now 'images' and 'annotations' will be (2167, 256, 256) arrays.
         return dataset
 
-    def create_dataloaders(self, batch_size=32, train_split=0.8):
-        """Create train and test dataloaders from the dataset.
-
-        Args:
-            batch_size (int): The batch size for the dataloaders.
-            train_split (float): The fraction of the dataset to use for training.
-
-        Returns:
-            train_loader (DataLoader): Dataloader for the training data.
-            test_loader (DataLoader): Dataloader for the testing data.
-        """
-        # Create the dataset
-        full_dataset = self.create_dataset()
-
-        # Calculate the sizes of train and test sets
-        train_size = int(train_split * len(full_dataset))
-        test_size = len(full_dataset) - train_size
-        
-        # Split the dataset into train and test sets
-        train_dataset, test_dataset = random_split(full_dataset, [train_size, test_size])
-        
-        # Define transformations if needed (e.g., ToTensor)
-        transform = Compose([ToTensor()])
-
-        # Apply transformations
-        train_dataset.dataset.transform = transform
-        test_dataset.dataset.transform = transform
-
-        train_loader = SAMDataset(dataset=train_dataset, processor=self.processor)
-        test_loader = SAMDataset(dataset=test_dataset, processor=self.processor)
-
-
-
-        train_dataset = DataLoader(train_loader, batch_size=1, shuffle=True)
-        test_dataset = DataLoader(test_loader, batch_size=1, shuffle=True)
-        
-        return train_dataset, test_dataset
-
-        # # Create dataloaders for train and test sets
-        # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        # test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-        # return train_loader, test_loader
 
     def load_and_preprocess_image(self, image_path, target_size=(256, 256), dtype=np.uint8):
         """Load an image from a file and preprocess it

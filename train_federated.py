@@ -1,6 +1,6 @@
 from transformers import SamProcessor
 from torch.utils.data import DataLoader
-from utils.datalaoder import SAMDataset, DataLoaderdFromDataset
+from utils.dataloader_local import SAMDataset, WaterDatasetLoader
 from transformers import SamModel
 from torch.optim import Adam
 from monai.losses import DiceCELoss
@@ -13,8 +13,8 @@ import torch.nn as nn
 from collections import OrderedDict
 
 """ToDO:
-    there is no train_dataloader in the TrainModel class
-    create a function to load the model from the server."""
+    There is no train_dataloader in the TrainModel class so I have to create it.
+    I have to create a function to load the model from the server."""
 
 class TrainModel:
     """
@@ -48,7 +48,6 @@ class TrainModel:
         for name, param in self.model.named_parameters():
             if name.startswith("vision_encoder") or name.startswith("prompt_encoder"):
                 param.requires_grad_(False)
-
         self.model = nn.DataParallel(self.model)
         self.model.to(device)
 
@@ -78,16 +77,6 @@ class TrainModel:
         
         return [val.cpu().numpy() for _, val in model.state_dict().items()]
 
-    def train_dataloader(self):
-        """Create the training dataloader.
-        Returns:
-            DataLoader: Training dataloader."""
-        loader = DataLoaderdFromDataset(self.dataset_root, self.image_subfolder, self.annotation_subfolder)
-        dataset = loader.create_dataset()
-        train_dataset = SAMDataset(dataset=dataset, processor=self.processor)
-        train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
-        return train_dataloader
-
     def train(self, initial_parameters=None):
         """Train the model.
         Args:
@@ -98,13 +87,12 @@ class TrainModel:
         # load initial parameters if provided
         if initial_parameters is not None:
             self.set_model_parameters(self.model, initial_parameters)
-            print("Loaded initial model parameters.")
 
-        train_dataloader = self.train_dataloader()
-        # loader = DataLoaderdFromDataset(self.dataset_root, self.image_subfolder, self.annotation_subfolder)
-        # dataset = loader.create_dataset()
-        # train_dataset = SAMDataset(dataset=dataset, processor=self.processor)
-        # train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
+    
+        loader = WaterDatasetLoader(self.dataset_root, self.image_subfolder, self.annotation_subfolder)
+        dataset = loader.create_dataset()
+        train_dataset = SAMDataset(dataset=dataset, processor=self.processor)
+        train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
 
         # initialize the optimizer and the loss function
         optimizer = Adam(self.model.module.mask_decoder.parameters(), lr=1e-5, weight_decay=0)
@@ -142,11 +130,11 @@ class TrainModel:
 
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     
-    dataset_root = "D:\\fedsam\\water_v1"
-    image_subfolder = "JPEGImages\ADE20K" 
-    annotation_subfolder = "Annotations\ADE20K"
+#     dataset_root = "D:\\fedsam\\water_v1"
+#     image_subfolder = "JPEGImages\ADE20K"
+#     annotation_subfolder = "Annotations\ADE20K"
 
-    train_model = TrainModel(dataset_root, image_subfolder, annotation_subfolder)
-    train_model.train()
+#     train_model = TrainModel(dataset_root, image_subfolder, annotation_subfolder)
+#     train_model.train()
