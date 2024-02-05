@@ -142,23 +142,23 @@ class WaterDatasetLoader:
         images = np.array(images, dtype=np.uint8)
         annotations = np.array(annotations, dtype=np.uint8)
 
-        dataset_dict = {
-            "image": [Image.fromarray(img, 'RGB') for img in images],
-            "label": [Image.fromarray(ann, 'L') for ann in annotations],
-        }  
-        # images_train, images_test, annotations_train, annotations_test = train_test_split(images, annotations, test_size=0.2, random_state=42)
-        # train_dataset_dict = { 
-        #     "image": [Image.fromarray(img, 'RGB') for img in images_train],
-        #     "label": [Image.fromarray(ann, 'L') for ann in annotations_train[:, :, :, 0]],
-        # }
-        # test_dataset_dict = {
-        #     "image": [Image.fromarray(img, 'RGB') for img in images_test],
-        #     "label": [Image.fromarray(ann, 'L') for ann in annotations_test[:, :, :, 0]],
-        # }
-        # train_dataset = Dataset.from_dict(train_dataset_dict)
-        # test_dataset = Dataset.from_dict(test_dataset_dict)
-        return Dataset.from_dict(dataset_dict)
-        # return train_dataset, test_dataset
+        # dataset_dict = {
+        #     "image": [Image.fromarray(img, 'RGB') for img in images],
+        #     "label": [Image.fromarray(ann, 'L') for ann in annotations[:, :, :, 0]],
+        # }  
+        images_train, images_test, annotations_train, annotations_test = train_test_split(images, annotations, test_size=0.2, random_state=42)
+        train_dataset_dict = { 
+            "image": [Image.fromarray(img, 'RGB') for img in images_train],
+            "label": [Image.fromarray(ann, 'L') for ann in annotations_train[:, :, :, 0]],
+        }
+        test_dataset_dict = {
+            "image": [Image.fromarray(img, 'RGB') for img in images_test],
+            "label": [Image.fromarray(ann, 'L') for ann in annotations_test[:, :, :, 0]],
+        }
+        train_dataset = Dataset.from_dict(train_dataset_dict)
+        test_dataset = Dataset.from_dict(test_dataset_dict)
+        # return Dataset.from_dict(dataset_dict)
+        return train_dataset, test_dataset
 
 # Code taken from: https://github.com/NielsRogge/Transformers-Tutorials/blob/master/SAM/Fine_tune_SAM_(segment_anything)_on_a_custom_dataset.ipynb
 class SAMDataset(TorchDataset):
