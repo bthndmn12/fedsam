@@ -17,7 +17,7 @@ processor = SamProcessor.from_pretrained("facebook/sam-vit-base")
 # Create an instance of the model architecture with the loaded configuration
 my_wase_model = SamModel(config=model_config)
 # Update the model by loading the weights from saved file.
-my_wase_model.load_state_dict(torch.load("D:\\fedsam\\wase_model_checkpoint_kaggle.pth"))
+my_wase_model.load_state_dict(torch.load("./model.pth"))
 
 # Set the device to cuda if available, otherwise use cpu
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -27,7 +27,7 @@ my_wase_model.to(device)
 def predict_image(image_path):
 
     test_image = Image.open(image_path)
-    test_image = test_image.convert("L")
+    # test_image = test_image.convert("L")
     # Get the box prompt based on the image size (you may need to adjust this based on your use case)
     prompt = [0, 0, test_image.width, test_image.height]
 
