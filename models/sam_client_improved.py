@@ -1,9 +1,23 @@
 import flwr as fl
 import sys
 sys.path.append('../')
-from train_federated2 import TrainFederated
+from fedsamv1.train_federated_improved import TrainFederated
 
 class SAMClient(fl.client.NumPyClient):
+    """
+    Flower client implementing SAM
+    
+    Args:
+        dataset_root (str): Root directory of the dataset
+        image_subfolder (str): Name of the image subfolder
+        annotation_subfolder (str): Name of the annotation subfolder
+        batch_size (int): Batch size for training
+        num_epochs (int): Number of epochs for training
+
+    ToDos:
+    - Validate the parameters and return types
+    """
+
     def __init__(self, dataset_root, image_subfolder, annotation_subfolder, batch_size=2, num_epochs=2):
         self.train_model = TrainFederated(dataset_root, image_subfolder, annotation_subfolder, batch_size, num_epochs)
 
